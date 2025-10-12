@@ -1,0 +1,24 @@
+{
+  "name": "cz.xprees.npc",
+  "rootNamespace": "Xprees.Npc",
+  "references": [
+    "GUID:f51ebe6a0ceec4240a699833d6309b23",
+    "GUID:653fae70c7574e09a1b05c4d822b5eea",
+    "GUID:edf2aee9504548fe8a83d9fc3faa0639",
+    "GUID:0c25cba100204332b9ee2c9863df1e3f",
+    "GUID:758763dcb3bb46caad0f8486302cbadf",
+    "GUID:359f36c9ea1441da89f5bbf1778b36d2",
+    "GUID:999c2ca78ab34358a1222750376a501c",
+    "GUID:776d03a35f1b52c4a9aed9f56d7b4229",
+    "GUID:89ce3243a645a904ba12f011a0f26918"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

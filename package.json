@@ -1,0 +1,30 @@
+{
+  "name": "cz.xprees.npc",
+  "version": "1.0.0",
+  "displayName": "NPC",
+  "description": "NPC package with basic NPC behaviour which is easily extendable.",
+  "unity": "2021.3",
+  "unityRelease": "16f1",
+  "license": "Apache-2.0",
+  "category": "NPC",
+  "dependencies": {
+    "com.cysharp.unitask": "2.5.10",
+    "cz.xprees.core": "1.0.33",
+    "cz.xprees.runtime-anchors": "1.0.13",
+    "cz.xprees.variables": "1.0.15",
+    "cz.xprees.editor-tools": "1.0.16"
+  },
+  "keywords": [
+    "Unity",
+    "NPC",
+    "AI",
+    "Navmesh",
+    "Animation",
+    "IK"
+  ],
+  "author": {
+    "name": "xprees",
+    "email": "xprees.developer@gmail.com",
+    "url": "https://xprees.com"
+  }
+}
