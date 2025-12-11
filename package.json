@@ -26,5 +26,9 @@
     "name": "xprees",
     "email": "xprees.developer@gmail.com",
     "url": "https://xprees.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xprees/unity-npc"
   }
 }
