@@ -41,6 +41,10 @@ namespace Xprees.Npc
         [Foldout("Behaviour Parameters")]
         [SerializeField] private float waitAfterMoveToArrived = 15;
 
+        [Foldout("Behaviour Parameters")]
+        [Tooltip("Seconds the NPC keeps facing the player after the dialog ended, before it goes back to its route.")]
+        [SerializeField] private float waitAfterDialog = 2.5f;
+
         [Header("Variables")]
         [Tooltip("Variable connecting attached interaction to NPC. Used for enabling/disabling the interaction based on NPC state.")]
         [SerializeField] private BoolReference isDisabledInteraction = new();
@@ -103,6 +107,7 @@ namespace Xprees.Npc
                     break;
                 case InteractionState interactionState:
                     interactionState.InteractionTimeout = waitForInteractionTimeout;
+                    interactionState.PostDialogDelay = waitAfterDialog;
                     break;
                 case IdleState idleState:
                     idleState.Route = routeAnchor?.Value;
@@ -129,7 +134,8 @@ namespace Xprees.Npc
 
         public async void PrepareFoInteraction()
         {
-            if (isDisabledInteraction.Value) return; // ignore player
+            if (IsDisabledInteraction) return; // ignore player
+            if (IsInteracting) return; // Already talking, a second state would unpause the first one's agent on exit
             await SwitchState(new InteractionState(this), _cts.Token);
         }
 
@@ -143,11 +149,39 @@ namespace Xprees.Npc
             await SwitchState(new InteractionState(this), _cts.Token);
         }
 
+        /// True while a dialog with this NPC is open.
+        public bool IsInDialog { get; private set; }
+
+        /// Wired to the dialog started event. Ignores dialogs of other objects.
+        public async void OnDialogStarted(GameObject interactable)
+        {
+            if (!IsInteractionOfThisNpc(interactable)) return;
+
+            IsInDialog = true;
+            if (CurrentState is InteractionState interactionState)
+            {
+                interactionState.OnDialogStarted();
+                return;
+            }
+
+            await SwitchState(new InteractionState(this), _cts.Token);
+        }
+
+        /// Wired to the dialog stopped event. Ignores dialogs of other objects.
+        public void OnDialogStopped(GameObject interactable)
+        {
+            if (!IsInteractionOfThisNpc(interactable)) return;
+
+            IsInDialog = false;
+            if (CurrentState is InteractionState interactionState) interactionState.OnDialogStopped();
+        }
+
         private bool IsInteractionOfThisNpc(GameObject interactable) => interactable == gameObject;
 
         public async void AfterInteraction()
         {
             InteractedWithPlayer = false;
+            if (IsInDialog) return; // The dialog decides when the conversation is over, not the distance
             if (IsInteracting) await SwitchState(new IdleState(this, CurrentWaypointIndex), _cts.Token);
         }
 
@@ -167,6 +201,7 @@ namespace Xprees.Npc
         private void OnEnable()
         {
             CurrentWaypointIndex = 0;
+            IsInDialog = false;
             _cts = new CancellationTokenSource();
         }
 

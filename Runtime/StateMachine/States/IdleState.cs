@@ -10,12 +10,13 @@ namespace Xprees.Npc.StateMachine.States
 {
     public class IdleState : NpcStateBase
     {
-        private CancellationTokenSource _cts;
+        private CancellationTokenSource _routingCts;
+        private CancellationToken _stateToken;
         private readonly int _lastWaypointIndex;
 
         public bool DontGoOnRoute { get; set; }
 
-        private bool IsAlreadyLooping => _cts is { IsCancellationRequested: false };
+        private bool IsAlreadyLooping => _routingCts is { IsCancellationRequested: false };
 
         private bool _routeChanged;
         private Route _route;
@@ -35,8 +36,12 @@ namespace Xprees.Npc.StateMachine.States
             _lastWaypointIndex = lastWaypointIndex;
         }
 
-        public override async UniTask EnterState(CancellationToken cancellationToken = default) =>
-            await AssignAgentRoute(cancellationToken);
+        public override async UniTask EnterState(CancellationToken cancellationToken = default)
+        {
+            _stateToken = BeginState(cancellationToken);
+            _routeChanged = false; // The route set while constructing is the one we are about to assign
+            await AssignAgentRoute(_stateToken);
+        }
 
         public override async UniTask UpdateState(CancellationToken cancellationToken = default)
         {
@@ -44,26 +49,25 @@ namespace Xprees.Npc.StateMachine.States
 
             _routeChanged = false;
             CancelRouting();
-            await AssignAgentRoute(cancellationToken);
+            await AssignAgentRoute(_stateToken);
         }
 
         public override UniTask ExitState(CancellationToken cancellationToken = default)
         {
             agent.UnPause();
             CancelRouting();
+            EndState();
             return UniTask.CompletedTask;
         }
 
         public override UniTask CheckSwitchState(CancellationToken cancellationToken = default) => UniTask.CompletedTask;
 
-        private void CreateRoutingTokenSource() => _cts = new CancellationTokenSource();
-
-        private CancellationToken GetRoutingToken() => _cts.Token;
-
+        /// Cancels the running route chain (including its start delay). The chain disposes its own source.
         private void CancelRouting()
         {
-            _cts?.Cancel();
-            _cts?.Dispose();
+            var routing = _routingCts;
+            _routingCts = null;
+            routing?.Cancel();
         }
 
         private async UniTask AssignAgentRoute(CancellationToken cancellationToken = default)
@@ -76,22 +80,28 @@ namespace Xprees.Npc.StateMachine.States
 
             if (IsAlreadyLooping) return;
 
-            // Wait for a random amount of time before starting to move -> more natural not all NPCs start moving at the same time
-            await UniTask.Delay(TimeSpan.FromSeconds(Random.Range(.1f, 5)), cancellationToken: cancellationToken);
-
-            await UniTask.WaitUntil(() => agent.isOnNavMesh, cancellationToken: cancellationToken);
-
-            if (IsAlreadyLooping) return; // Check again after delay
-
-            CreateRoutingTokenSource();
-            await LoopAgentOnRoute(GetRoutingToken());
-            CancelRouting();
+            var routing = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _routingCts = routing;
+            try
+            {
+                // Wait for a random amount of time before starting to move -> more natural not all NPCs start moving at the same time
+                await UniTask.Delay(TimeSpan.FromSeconds(Random.Range(.1f, 5)), cancellationToken: routing.Token);
+                await UniTask.WaitUntil(() => agent.isOnNavMesh, cancellationToken: routing.Token);
+                await LoopAgentOnRoute(routing.Token);
+            }
+            finally
+            {
+                if (_routingCts == routing) _routingCts = null;
+                routing.Dispose();
+            }
         }
 
         private void DontGoAnywhere() => agent.Pause();
 
         private async UniTask LoopAgentOnRoute(CancellationToken cancellationToken = default)
         {
+            if (Route.waypoints.Count == 0) return;
+
             var waypointIndex = _lastWaypointIndex; // Recalling last waypoint
             while (true)
             {

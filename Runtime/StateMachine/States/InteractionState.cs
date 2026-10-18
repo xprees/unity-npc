@@ -10,8 +10,15 @@ namespace Xprees.Npc.StateMachine.States
     {
         private readonly TimeoutController _timeoutController = new();
 
+        private CancellationToken _stateToken;
+        private CancellationToken _controllerToken;
+        private bool _dialogActive;
+
         /// Timeout after which the NPC will go back to idle state if no interaction is detected
         public float InteractionTimeout { get; set; } = 5;
+
+        /// Seconds the NPC keeps facing the player after the dialog ended, before it goes back to idle
+        public float PostDialogDelay { get; set; } = 2.5f;
 
         public InteractionState(NpcController controller) : base(controller)
         {
@@ -19,27 +26,64 @@ namespace Xprees.Npc.StateMachine.States
 
         public override async UniTask EnterState(CancellationToken cancellationToken = default)
         {
+            _controllerToken = cancellationToken;
+            _stateToken = BeginState(cancellationToken);
+
             agent.Pause();
             LookAtPlayer();
-            await WaitForInteractionOrGoBackToIdle(cancellationToken);
+
+            if (controller.IsInDialog)
+            {
+                OnDialogStarted();
+                return;
+            }
+
+            await WaitForInteractionOrGoBackToIdle();
         }
 
-        private async UniTask WaitForInteractionOrGoBackToIdle(CancellationToken cancellationToken = default)
+        private async UniTask WaitForInteractionOrGoBackToIdle()
         {
             try
             {
                 await UniTask.WaitUntil(
-                    predicate: InteractedWithPlayer,
+                    predicate: () => InteractedWithPlayer() || _dialogActive,
                     cancellationToken: _timeoutController.Timeout(TimeSpan.FromSeconds(InteractionTimeout))
-                ).AttachExternalCancellation(cancellationToken);
+                ).AttachExternalCancellation(_stateToken);
             }
             catch (OperationCanceledException)
             {
-                if (_timeoutController.IsTimeout() && !InteractedWithPlayer())
+                var timedOut = _timeoutController.IsTimeout() && !_stateToken.IsCancellationRequested;
+                if (timedOut && IsCurrentState && !InteractedWithPlayer() && !_dialogActive)
                 {
-                    await controller.SwitchState(new IdleState(controller, controller.CurrentWaypointIndex), cancellationToken);
+                    await controller.SwitchState(new IdleState(controller, controller.CurrentWaypointIndex), _controllerToken);
                 }
             }
+        }
+
+        /// The dialog with this NPC opened: it can't be interrupted (scenario moves wait) and doesn't time out or end by distance.
+        public void OnDialogStarted()
+        {
+            _dialogActive = true;
+            CanBeInterrupted = false;
+            WaitUntilCanBeInterrupted = true;
+        }
+
+        /// The dialog with this NPC closed: face the player a moment longer, then go back to idle.
+        public void OnDialogStopped()
+        {
+            _dialogActive = false;
+            CanBeInterrupted = true;
+            ResumeAfterDelay().Forget();
+        }
+
+        private async UniTask ResumeAfterDelay()
+        {
+            var cancelled = await UniTask.Delay(TimeSpan.FromSeconds(PostDialogDelay), cancellationToken: _stateToken)
+                .SuppressCancellationThrow();
+            if (cancelled || !IsCurrentState || _dialogActive) return;
+
+            await controller.SwitchState(new IdleState(controller, controller.CurrentWaypointIndex), _controllerToken)
+                .SuppressCancellationThrow();
         }
 
         private bool InteractedWithPlayer() => controller.InteractedWithPlayer;
@@ -59,6 +103,7 @@ namespace Xprees.Npc.StateMachine.States
 
         public override UniTask ExitState(CancellationToken cancellationToken = default)
         {
+            EndState();
             _timeoutController.Dispose();
             agent.UnPause();
             return UniTask.CompletedTask;
